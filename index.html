@@ -56,7 +56,7 @@
 
     .top {
       display: grid;
-      grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.9fr);
+      grid-template-columns: minmax(0, 1fr) 280px;
       gap: 12px;
       align-items: start;
     }
@@ -87,9 +87,9 @@
       border: 1px solid rgba(255,255,255,0.1);
       background: rgba(255,255,255,0.06);
       color: rgba(255,255,255,0.88);
-      border-radius: 9px;
-      padding: 7px 11px;
-      font-size: 11px;
+      border-radius: 8px;
+      padding: 5px 9px;
+      font-size: 10px;
       font-family: var(--font-ui);
       cursor: pointer;
       transition: background 0.15s, border-color 0.15s;
@@ -167,28 +167,38 @@
     /* Controls grid */
     .controls {
       display: grid;
-      grid-template-columns: repeat(3, minmax(140px, 1fr));
-      gap: 7px 10px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 5px 8px;
       align-content: start;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.12) transparent;
+      padding-right: 2px;
     }
+
+    .controls::-webkit-scrollbar { width: 4px; }
+    .controls::-webkit-scrollbar-track { background: transparent; }
+    .controls::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
 
     .ctrl-section {
       grid-column: 1 / -1;
-      font-size: 9px;
+      font-size: 8px;
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: var(--muted);
-      padding-top: 6px;
-      padding-bottom: 2px;
+      padding-top: 5px;
+      padding-bottom: 1px;
       border-top: 1px solid rgba(255,255,255,0.06);
       font-family: var(--font-ui);
     }
 
     label {
-      font-size: 10px;
+      font-size: 9px;
       opacity: 0.9;
       display: grid;
-      gap: 4px;
+      gap: 2px;
       font-family: var(--font-ui);
     }
 
@@ -196,18 +206,18 @@
     label span em {
       font-style: normal;
       color: var(--accent);
-      font-size: 10px;
+      font-size: 9px;
     }
 
     input[type="range"] {
       width: 100%;
-      height: 14px;
+      height: 12px;
       accent-color: var(--accent);
     }
 
     input[type="color"] {
       width: 100%;
-      height: 26px;
+      height: 22px;
       border: none;
       background: transparent;
       padding: 0;
@@ -261,15 +271,16 @@
       z-index: 9999;
     }
 
-    @media (max-width: 1180px) {
+    @media (max-width: 1000px) {
       .top { grid-template-columns: 1fr; }
       .stage-panel { width: 100%; }
-    }
-    @media (max-width: 980px) {
-      .controls { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+      .controls {
+        max-height: 60vh;
+        grid-template-columns: repeat(3, 1fr);
+      }
     }
     @media (max-width: 640px) {
-      .controls { grid-template-columns: 1fr; }
+      .controls { grid-template-columns: repeat(2, 1fr); }
     }
   </style>
 </head>
@@ -363,6 +374,9 @@
         </label>
         <label><span>Wave height <em id="vWaveHeight">36</em></span>
           <input id="waveHeight" type="range" min="15" max="70" step="1" value="36">
+        </label>
+        <label><span>Wave Y offset <em id="vWaveOffsetY">0</em></span>
+          <input id="waveOffsetY" type="range" min="-100" max="100" step="1" value="0">
         </label>
         <label><span>Dot size <em id="vDotSize">19</em></span>
           <input id="dotSize" type="range" min="10" max="50" step="1" value="19">
@@ -476,7 +490,7 @@
   // ─── DOM element map ─────────────────────────────────────────────────────────
   const el = {};
   [
-    'bars','glow','motion','audioInfluence','audioSmooth','waveWidth','waveHeight',
+    'bars','glow','motion','audioInfluence','audioSmooth','waveWidth','waveHeight','waveOffsetY',
     'dotSize','softness','fadeEdge','ringThickness','waveColor',
     'beatSensitivity','bloom','colorShift','ringPulse','fftSize',
     'dustAmount','dustDelay','dustSpeed','dustSize','dustSpread','dustAlpha',
@@ -493,7 +507,7 @@
   const valMap = {
     bars:'vBars', glow:'vGlow', motion:'vMotion', audioInfluence:'vAudioInfluence',
     audioSmooth:'vAudioSmooth', waveWidth:'vWaveWidth', waveHeight:'vWaveHeight',
-    dotSize:'vDotSize', softness:'vSoftness', fadeEdge:'vFadeEdge',
+    waveOffsetY:'vWaveOffsetY', dotSize:'vDotSize', softness:'vSoftness', fadeEdge:'vFadeEdge',
     ringThickness:'vRingThickness', beatSensitivity:'vBeatSensitivity',
     bloom:'vBloom', colorShift:'vColorShift', ringPulse:'vRingPulse',
     dustAmount:'vDustAmount', dustDelay:'vDustDelay', dustSpeed:'vDustSpeed',
@@ -948,7 +962,7 @@
     const waveWidth  = radius * (s.waveWidth / 100);
     const waveHeight = radius * (s.waveHeight / 100) * (1 + audioFrame.bass * 0.24);
     const spacing    = waveWidth / s.bars;
-    const centerY    = radius * 0.18;
+    const centerY    = s.waveOffsetY; // 0 = perfectly centred; user-adjustable
     const motionBoost = 0.24 + (s.motion / 100) * 1.8;
 
     // Edge fade mask
@@ -1061,6 +1075,7 @@
       audioSmooth:     parseInt(el.audioSmooth.value, 10),
       waveWidth:       parseInt(el.waveWidth.value, 10),
       waveHeight:      parseInt(el.waveHeight.value, 10),
+      waveOffsetY:     parseInt(el.waveOffsetY.value, 10),
       dotSize:         parseInt(el.dotSize.value, 10),
       softness:        parseInt(el.softness.value, 10),
       fadeEdge:        parseInt(el.fadeEdge.value, 10),
