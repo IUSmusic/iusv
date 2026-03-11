@@ -1,5 +1,7 @@
 IUS Visualizer
 
+https://iusmusic.github.io/iusv/
+
 Standalone browser-based audio visualizer. 
 Renders a real-time circular visualizer driven by local audio. Frequency
 analysis is performed via the Web Audio API AnalyserNode using FFT. All
