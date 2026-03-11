@@ -1,7 +1,6 @@
 IUS Visualizer
 
-Standalone browser-based audio visualizer. Single HTML file. No build
-step, no server, no external dependencies. Open in a modern browser.
+Standalone browser-based audio visualizer. 
 Renders a real-time circular visualizer driven by local audio. Frequency
 analysis is performed via the Web Audio API AnalyserNode using FFT. All
 visual output is drawn to an HTML Canvas element using the Canvas 2D API.
