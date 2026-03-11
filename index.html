@@ -21,7 +21,7 @@
       --panel: rgba(255,255,255,0.04);
       --panel-border: rgba(255,255,255,0.08);
       --muted: rgba(255,255,255,0.55);
-      --accent: #000000;
+      --accent: #ffffff;
       --font-ui: 'DM Mono', monospace;
       --font-display: 'Syne', sans-serif;
     }
@@ -269,6 +269,7 @@
         grid-template-columns: repeat(3, 1fr);
       }
     }
+
     @media (max-width: 640px) {
       .controls { grid-template-columns: repeat(2, 1fr); }
     }
@@ -281,7 +282,6 @@
 <div class="wrap">
   <div class="panel">
     <div class="top">
-      <!-- Left column -->
       <div class="top-main">
         <div>
           <div class="title">IUS Visualizer</div>
@@ -323,7 +323,6 @@
           <div class="status" id="status">Ready. Load a music file to begin.</div>
         </div>
 
-        <!-- Preview canvas -->
         <div class="panel stage-panel">
           <div class="stage-wrap">
             <canvas id="c" width="700" height="400"></canvas>
@@ -334,9 +333,7 @@
         </div>
       </div>
 
-      <!-- Right column: controls -->
       <div class="controls">
-
         <div class="ctrl-section">— Wave</div>
 
         <label style="grid-column:1/-1">Bar style
@@ -471,11 +468,9 @@
 </div>
 
 <script>
-  // ─── Canvas & context ────────────────────────────────────────────────────────
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: false });
 
-  // ─── DOM element map ─────────────────────────────────────────────────────────
   const el = {};
   [
     'barStyle','bars','glow','motion','audioInfluence','audioSmooth','waveWidth','waveHeight','waveOffsetY',
@@ -490,7 +485,6 @@
     'emBass','emMid','emHi','beatFlash'
   ].forEach(id => { el[id] = document.getElementById(id); });
 
-  // Live value displays
   const valMap = {
     bars:'vBars', glow:'vGlow', motion:'vMotion', audioInfluence:'vAudioInfluence',
     audioSmooth:'vAudioSmooth', waveWidth:'vWaveWidth', waveHeight:'vWaveHeight',
@@ -500,36 +494,28 @@
     dustAmount:'vDustAmount', dustDelay:'vDustDelay', dustSpeed:'vDustSpeed',
     dustSize:'vDustSize', dustSpread:'vDustSpread', dustAlpha:'vDustAlpha',
     vizScale:'vVizScale', vizOffsetX:'vVizOffsetX', vizOffsetY:'vVizOffsetY',
-    bgScale:'vBgScale', bgOffsetX:'vBgOffsetX',
-    bgOffsetY:'vBgOffsetY', bgOpacity:'vBgOpacity'
+    bgScale:'vBgScale', bgOffsetX:'vBgOffsetX', bgOffsetY:'vBgOffsetY', bgOpacity:'vBgOpacity'
   };
 
   const FFT_SIZES = [256, 512, 1024, 2048];
-  const FFT_LABELS = ['256','512','1024','2048'];
+  const FFT_LABELS = ['256', '512', '1024', '2048'];
+  const ASSET_DEFAULT_SRC = 'asset01.png';
 
   Object.entries(valMap).forEach(([inputId, valId]) => {
     const inp = document.getElementById(inputId);
     const out = document.getElementById(valId);
     if (!inp || !out) return;
     const update = () => {
-      if (inputId === 'fftSize') {
-        out.textContent = FFT_LABELS[+inp.value] ?? inp.value;
-      } else {
-        out.textContent = inp.value;
-      }
+      out.textContent = inputId === 'fftSize' ? (FFT_LABELS[+inp.value] ?? inp.value) : inp.value;
     };
     inp.addEventListener('input', update);
     update();
   });
 
-  // ─── Default background asset ───────────────────────────────────────────────
-  const ASSET_DEFAULT_SRC = 'asset01.png';
-
-  // ─── State ───────────────────────────────────────────────────────────────────
   let t = 0;
   let lastTimestamp = 0;
   let particles = [];
-  let running = true;           // audio playing state
+  let running = true;
   let rafId = 0;
 
   let bgLayer = null;
@@ -541,7 +527,6 @@
   let currentMime = '';
   let stream = null;
 
-  // Web Audio
   let audioCtx = null;
   let analyserNode = null;
   let audioGainNode = null;
@@ -552,147 +537,203 @@
   let barMemory = [];
   let energyState = { bass: 0, mid: 0, treble: 0, overall: 0, pulse: 0 };
 
-  // Beat detection
   let beatHistory = [];
   const BEAT_HISTORY_LEN = 43;
   let lastBeatTime = 0;
   let beatFlashTimeout = null;
 
-  // ─── Utility ─────────────────────────────────────────────────────────────────
-  function setStatus(msg) { el.status.textContent = msg; }
-  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function setStatus(msg) {
+    el.status.textContent = msg;
+  }
+
+  function clamp(v, lo, hi) {
+    return Math.max(lo, Math.min(hi, v));
+  }
 
   function formatTime(s) {
     if (!Number.isFinite(s) || s < 0) return '00:00';
-    return `\( {String(Math.floor(s/60)).padStart(2,'0')}: \){String(Math.floor(s%60)).padStart(2,'0')}`;
+    const mins = String(Math.floor(s / 60)).padStart(2, '0');
+    const secs = String(Math.floor(s % 60)).padStart(2, '0');
+    return `${mins}:${secs}`;
   }
 
-  // FIXED: Safer hexToRgb with fallback to white
   function hexToRgb(hex) {
     if (!hex || typeof hex !== 'string') return { r: 255, g: 255, b: 255 };
-    hex = hex.replace('#', '');
-    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-    const n = parseInt(hex, 16);
-    if (isNaN(n)) return { r: 255, g: 255, b: 255 };
+    let clean = hex.trim().replace('#', '');
+    if (clean.length === 3) clean = clean.split('').map(c => c + c).join('');
+    if (!/^[0-9a-fA-F]{6}$/.test(clean)) return { r: 255, g: 255, b: 255 };
+    const n = parseInt(clean, 16);
     return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
   }
 
+  function rgbaString(color, alpha = 1) {
+    const a = clamp(Number(alpha), 0, 1);
+    return `rgba(${color.r}, ${color.g}, ${color.b}, ${a})`;
+  }
+
   function shiftHue(rgb, deg) {
-    if (deg === 0) return rgb;
-    const h = deg / 360;
-    const r = rgb.r / 255, g = rgb.g / 255, b = rgb.b / 255;
-    const max = Math.max(r,g,b), min = Math.min(r,g,b);
-    let hh = 0, s = 0, l = (max+min)/2;
+    if (!deg) return rgb;
+
+    const r = rgb.r / 255;
+    const g = rgb.g / 255;
+    const b = rgb.b / 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+
+    let h = 0;
+    let s = 0;
+
     if (max !== min) {
       const d = max - min;
-      s = l > 0.5 ? d/(2-max-min) : d/(max+min);
-      switch(max) {
-        case r: hh = (g-b)/d + (g<b?6:0); break;
-        case g: hh = (b-r)/d + 2; break;
-        case b: hh = (r-g)/d + 4; break;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
       }
-      hh /= 6;
+
+      h /= 6;
     }
-    hh = (hh + h) % 1;
-    function hue2rgb(p,q,t) {
-      if (t<0) t+=1; if (t>1) t-=1;
-      if (t<1/6) return p+(q-p)*6*t;
-      if (t<1/2) return q;
-      if (t<2/3) return p+(q-p)*(2/3-t)*6;
+
+    h = (h + deg / 360) % 1;
+    if (h < 0) h += 1;
+
+    if (s === 0) {
+      const gray = Math.round(l * 255);
+      return { r: gray, g: gray, b: gray };
+    }
+
+    function hue2rgb(p, q, t) {
+      let tt = t;
+      if (tt < 0) tt += 1;
+      if (tt > 1) tt -= 1;
+      if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+      if (tt < 1 / 2) return q;
+      if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
       return p;
     }
-    const q = l < 0.5 ? l*(1+s) : l+s-l*s;
-    const p = 2*l-q;
+
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+
     return {
-      r: Math.round(hue2rgb(p,q,hh+1/3)*255),
-      g: Math.round(hue2rgb(p,q,hh)*255),
-      b: Math.round(hue2rgb(p,q,hh-1/3)*255)
+      r: Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+      g: Math.round(hue2rgb(p, q, h) * 255),
+      b: Math.round(hue2rgb(p, q, h - 1 / 3) * 255)
     };
   }
 
-  // ─── Seek UI ─────────────────────────────────────────────────────────────────
   let seekUiThrottle = 0;
-  function updateSeekUi(force) {
+  function updateSeekUi(force = false) {
     const now = performance.now();
     if (!force && now - seekUiThrottle < 200) return;
     seekUiThrottle = now;
+
     if (!audioLayer || !audioLayer.element) {
       el.musicSeek.value = 0;
       el.musicSeek.max = 100;
       el.musicTime.textContent = '00:00 / 00:00';
       return;
     }
+
     const audio = audioLayer.element;
     const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+
     el.musicSeek.max = dur || 100;
     if (!isSeeking) el.musicSeek.value = dur ? audio.currentTime : 0;
     el.musicTime.textContent = `${formatTime(audio.currentTime)} / ${formatTime(dur)}`;
   }
 
-  // ─── Web Audio setup ─────────────────────────────────────────────────────────
   function ensureAudioContext() {
     if (audioCtx) return audioCtx;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
+
     audioCtx = new AC();
     analyserNode = audioCtx.createAnalyser();
     analyserNode.fftSize = 512;
     analyserNode.smoothingTimeConstant = 0.84;
+
     audioGainNode = audioCtx.createGain();
     audioCaptureNode = audioCtx.createMediaStreamDestination();
+
     analyserNode.connect(audioGainNode);
     audioGainNode.connect(audioCtx.destination);
     audioGainNode.connect(audioCaptureNode);
+
     frequencyData = new Uint8Array(analyserNode.frequencyBinCount);
     timeDomainData = new Uint8Array(analyserNode.fftSize);
+
     return audioCtx;
   }
 
   async function resumeAudioContext() {
     const c = ensureAudioContext();
     if (c && c.state === 'suspended') {
-      try { await c.resume(); } catch(e) { console.warn(e); }
+      try {
+        await c.resume();
+      } catch (e) {
+        console.warn(e);
+      }
     }
   }
 
   function setFftSize(sizeIndex) {
     if (!analyserNode) return;
-    const size = FFT_SIZES[clamp(sizeIndex, 0, 3)];
+    const size = FFT_SIZES[clamp(sizeIndex, 0, FFT_SIZES.length - 1)];
     try {
       analyserNode.fftSize = size;
       frequencyData = new Uint8Array(analyserNode.frequencyBinCount);
       timeDomainData = new Uint8Array(analyserNode.fftSize);
       barMemory = [];
-    } catch(e) { console.warn('FFT resize failed', e); }
+    } catch (e) {
+      console.warn('FFT resize failed', e);
+    }
   }
 
   function disconnectAudioSource() {
     if (audioSourceNode) {
-      try { audioSourceNode.disconnect(); } catch(e) {}
+      try {
+        audioSourceNode.disconnect();
+      } catch (e) {}
       audioSourceNode = null;
     }
+
     barMemory = [];
     beatHistory = [];
-    energyState = { bass:0, mid:0, treble:0, overall:0, pulse:0 };
+    energyState = { bass: 0, mid: 0, treble: 0, overall: 0, pulse: 0 };
+    el.emBass.style.width = '0%';
+    el.emMid.style.width = '0%';
+    el.emHi.style.width = '0%';
   }
 
   function attachAudioAnalysis(audio) {
     const c = ensureAudioContext();
     if (!c) return false;
+
     disconnectAudioSource();
+
     try {
       audioSourceNode = c.createMediaElementSource(audio);
       audioSourceNode.connect(analyserNode);
-    } catch(e) { console.warn('Audio source connect:', e); }
-    return true;
+      return true;
+    } catch (e) {
+      console.warn('Audio source connect:', e);
+      return false;
+    }
   }
 
   function clearMusic() {
     if (!audioLayer) return;
+
     const audio = audioLayer.element;
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
+
     if (audioLayer.url) URL.revokeObjectURL(audioLayer.url);
     disconnectAudioSource();
     audioLayer = null;
@@ -709,20 +750,24 @@
 
   function loadAudioFromFile(file) {
     if (!file) return;
+
     clearMusic();
+
     const url = URL.createObjectURL(file);
     const audio = document.createElement('audio');
     audio.src = url;
     audio.preload = 'auto';
     audio.crossOrigin = 'anonymous';
+
     audio.addEventListener('loadedmetadata', async () => {
       audioLayer = { element: audio, url, name: file.name };
       const ok = attachAudioAnalysis(audio);
       updateSeekUi(true);
+
       if (running) {
         await resumeAudioContext();
         audio.play().then(() => {
-          setStatus(`Music: \( {file.name} \){ok ? ' — FFT active' : ''}`);
+          setStatus(`Music: ${file.name}${ok ? ' — FFT active' : ''}`);
         }).catch(() => {
           setStatus(`Music loaded: ${file.name}. Press Play.`);
         });
@@ -730,6 +775,7 @@
         setStatus(`Music loaded: ${file.name}. Press Play.`);
       }
     }, { once: true });
+
     audio.addEventListener('timeupdate', () => updateSeekUi());
     audio.addEventListener('durationchange', () => updateSeekUi(true));
     audio.addEventListener('ended', handlePlaybackEnded);
@@ -742,33 +788,44 @@
     }, { once: true });
   }
 
-  // ─── Beat detection ───────────────────────────────────────────────────────────
   function detectBeat(bassRaw, sensitivity) {
     beatHistory.push(bassRaw);
     if (beatHistory.length > BEAT_HISTORY_LEN) beatHistory.shift();
-    const avg = beatHistory.reduce((a,b) => a+b, 0) / beatHistory.length;
+
+    const avg = beatHistory.reduce((a, b) => a + b, 0) / beatHistory.length;
     const threshold = avg * (1.2 + (1 - sensitivity) * 0.8);
     const now = performance.now();
+
     if (bassRaw > threshold && bassRaw > 0.15 && now - lastBeatTime > 200) {
       lastBeatTime = now;
       return true;
     }
+
     return false;
   }
 
   function triggerBeatFlash() {
     el.beatFlash.style.opacity = '1';
     clearTimeout(beatFlashTimeout);
-    beatFlashTimeout = setTimeout(() => { el.beatFlash.style.opacity = '0'; }, 80);
+    beatFlashTimeout = setTimeout(() => {
+      el.beatFlash.style.opacity = '0';
+    }, 80);
   }
 
-  // ─── Audio frame processing ───────────────────────────────────────────────────
   function averageRange(startR, endR) {
     if (!frequencyData || frequencyData.length === 0) return 0;
+
     const s = Math.floor(frequencyData.length * startR);
     const e = Math.max(s + 1, Math.floor(frequencyData.length * endR));
-    let total = 0, cnt = 0;
-    for (let i = s; i < e && i < frequencyData.length; i++) { total += frequencyData[i]; cnt++; }
+
+    let total = 0;
+    let cnt = 0;
+
+    for (let i = s; i < e && i < frequencyData.length; i++) {
+      total += frequencyData[i];
+      cnt++;
+    }
+
     return cnt ? total / cnt / 255 : 0;
   }
 
@@ -781,35 +838,45 @@
         Math.sin(t * 0.110 + i * 0.09) * 0.15
       ));
     }
-    return { bars, bass:0.18, mid:0.15, treble:0.12, overall:0.15, pulse:0.12, beat:false };
+
+    return {
+      bars,
+      bass: 0.18,
+      mid: 0.15,
+      treble: 0.12,
+      overall: 0.15,
+      pulse: 0.12,
+      beat: false
+    };
   }
 
   function getAudioFrame(barCount, influence, smoothing, sensitivity) {
     const audio = audioLayer?.element;
     const canAnalyse = analyserNode && frequencyData && audio && !audio.paused && !audio.ended;
+
     if (!canAnalyse) return getFallbackBars(barCount);
 
     analyserNode.smoothingTimeConstant = clamp(0.35 + smoothing * 0.6, 0.35, 0.97);
     analyserNode.getByteFrequencyData(frequencyData);
 
-    const bassRaw    = averageRange(0.01, 0.10);
-    const midRaw     = averageRange(0.10, 0.35);
-    const trebleRaw  = averageRange(0.35, 0.90);
-    const overallRaw = frequencyData.reduce((s,v) => s+v, 0) / (frequencyData.length * 255);
+    const bassRaw = averageRange(0.01, 0.10);
+    const midRaw = averageRange(0.10, 0.35);
+    const trebleRaw = averageRange(0.35, 0.90);
+    const overallRaw = frequencyData.reduce((s, v) => s + v, 0) / (frequencyData.length * 255);
 
     const lerpTo = (cur, target, rate) => cur + (target - cur) * rate;
-    energyState.bass    = lerpTo(energyState.bass, bassRaw, 0.22);
-    energyState.mid     = lerpTo(energyState.mid, midRaw, 0.18);
-    energyState.treble  = lerpTo(energyState.treble, trebleRaw, 0.16);
+    energyState.bass = lerpTo(energyState.bass, bassRaw, 0.22);
+    energyState.mid = lerpTo(energyState.mid, midRaw, 0.18);
+    energyState.treble = lerpTo(energyState.treble, trebleRaw, 0.16);
     energyState.overall = lerpTo(energyState.overall, overallRaw, 0.16);
-    energyState.pulse  += (Math.max(0, bassRaw - energyState.pulse) - energyState.pulse) * 0.22;
+    energyState.pulse += (Math.max(0, bassRaw - energyState.pulse) - energyState.pulse) * 0.22;
 
     const beat = detectBeat(bassRaw, sensitivity);
     if (beat) triggerBeatFlash();
 
     el.emBass.style.width = `${clamp(energyState.bass * 100, 0, 100)}%`;
-    el.emMid.style.width  = `${clamp(energyState.mid  * 100, 0, 100)}%`;
-    el.emHi.style.width   = `${clamp(energyState.treble * 100, 0, 100)}%`;
+    el.emMid.style.width = `${clamp(energyState.mid * 100, 0, 100)}%`;
+    el.emHi.style.width = `${clamp(energyState.treble * 100, 0, 100)}%`;
 
     if (barMemory.length !== barCount) barMemory = new Array(barCount).fill(0);
 
@@ -820,25 +887,36 @@
       const logLo = Math.pow(i / barCount, 1.8) * binCount * 0.85;
       const logHi = Math.pow((i + 1) / barCount, 1.8) * binCount * 0.85;
       const start = Math.floor(logLo);
-      const end   = Math.max(start + 1, Math.floor(logHi));
+      const end = Math.max(start + 1, Math.floor(logHi));
 
-      let total = 0, cnt = 0;
-      for (let j = start; j < end && j < binCount; j++) { total += frequencyData[j]; cnt++; }
+      let total = 0;
+      let cnt = 0;
 
-      const raw    = cnt ? total / cnt / 255 : 0;
+      for (let j = start; j < end && j < binCount; j++) {
+        total += frequencyData[j];
+        cnt++;
+      }
+
+      const raw = cnt ? total / cnt / 255 : 0;
       const shaped = Math.pow(raw, 0.82);
-      const mixed  = shaped * influence + (0.18 + 0.18 * Math.sin(t * 0.035 + i * 0.22)) * (1 - influence);
-      const lerp   = 0.10 + (1 - smoothing) * 0.22;
+      const mixed = shaped * influence + (0.18 + 0.18 * Math.sin(t * 0.035 + i * 0.22)) * (1 - influence);
+      const lerp = 0.10 + (1 - smoothing) * 0.22;
+
       barMemory[i] += (mixed - barMemory[i]) * lerp;
       bars.push(clamp(barMemory[i], 0, 1));
     }
 
-    return { bars, bass: energyState.bass, mid: energyState.mid,
-             treble: energyState.treble, overall: energyState.overall,
-             pulse: energyState.pulse, beat };
+    return {
+      bars,
+      bass: energyState.bass,
+      mid: energyState.mid,
+      treble: energyState.treble,
+      overall: energyState.overall,
+      pulse: energyState.pulse,
+      beat
+    };
   }
 
-  // ─── Rendering helpers ────────────────────────────────────────────────────────
   function drawWavelet(x, y, size, alpha, color, rotation) {
     ctx.save();
     ctx.translate(x, y);
@@ -847,7 +925,7 @@
     ctx.moveTo(-size, 0);
     ctx.quadraticCurveTo(-size * 0.35, -size * 0.85, 0, 0);
     ctx.quadraticCurveTo(size * 0.35, size * 0.85, size, 0);
-    ctx.strokeStyle = `rgba(\( {color.r}, \){color.g},\( {color.b}, \){alpha})`;
+    ctx.strokeStyle = rgbaString(color, alpha);
     ctx.lineWidth = Math.max(1.2, size * 0.22);
     ctx.lineCap = 'round';
     ctx.stroke();
@@ -856,14 +934,19 @@
 
   function drawFittedAsset(asset, opts = {}) {
     if (!asset || !asset.ready) return;
+
     const { scale = 1, opacity = 1, offsetX = 0, offsetY = 0, cover = true } = opts;
-    const srcW = asset.width, srcH = asset.height;
+    const srcW = asset.width;
+    const srcH = asset.height;
     if (!srcW || !srcH) return;
+
     const baseScale = cover
       ? Math.max(canvas.width / srcW, canvas.height / srcH)
       : Math.min(canvas.width / srcW, canvas.height / srcH);
+
     const dw = srcW * baseScale * scale;
     const dh = srcH * baseScale * scale;
+
     ctx.save();
     ctx.globalAlpha = opacity;
     ctx.drawImage(asset.element, (canvas.width - dw) / 2 + offsetX, (canvas.height - dh) / 2 + offsetY, dw, dh);
@@ -872,55 +955,64 @@
 
   function ensureParticles(count) {
     while (particles.length < count) {
-      particles.push({ seed: Math.random() * 1000, age: Math.random() * 100, drift: Math.random() * 2 - 1 });
+      particles.push({
+        seed: Math.random() * 1000,
+        age: Math.random() * 100,
+        drift: Math.random() * 2 - 1
+      });
     }
     if (particles.length > count) particles.length = count;
   }
 
-  // ─── Main badge renderer (no circle) ────────────────────────────────────────
   function drawBadge(cx, cy, radius, s) {
-    const baseColor = hexToRgb(s.waveColor);                     // now always safe
-    const hueShift = (s.colorShift / 100) * 360 * energyState.bass;
+    const audioFrame = getAudioFrame(
+      s.bars,
+      s.audioInfluence / 100,
+      s.audioSmooth / 100,
+      s.beatSensitivity / 100
+    );
+
+    const baseColor = hexToRgb(s.waveColor);
+    const hueShift = (s.colorShift / 100) * 360 * (0.25 + audioFrame.bass * 0.75);
     const color = shiftHue(baseColor, hueShift);
-    const rgba = (a) => `rgba(\( {color.r}, \){color.g},\( {color.b}, \){a})`;
+    const rgba = (a) => rgbaString(color, a);
 
     ctx.save();
     ctx.translate(cx, cy);
 
     const ringPulseAmt = s.ringPulse / 100;
-    const ringPulse = 1 + (getAudioFrame(1,0,0,0).bass || 0) * 0.16 * ringPulseAmt; // dummy for pulse
+    const ringPulse = 1 + audioFrame.bass * 0.16 * ringPulseAmt;
 
-    const waveWidth   = radius * (s.waveWidth / 100);
-    const waveHeight  = radius * (s.waveHeight / 100) * (1 + (getAudioFrame(1,0,0,0).bass || 0) * 0.24);
-    const spacing     = waveWidth / s.bars;
-    const centerY     = s.waveOffsetY;
+    const waveWidth = radius * (s.waveWidth / 100) * ringPulse;
+    const waveHeight = radius * (s.waveHeight / 100) * (1 + audioFrame.bass * 0.24);
+    const spacing = waveWidth / s.bars;
+    const centerY = s.waveOffsetY;
     const motionBoost = 0.24 + (s.motion / 100) * 1.8;
-    const glowVal     = s.glow * (0.65 + (getAudioFrame(1,0,0,0).overall || 0) * 0.85);
+    const glowVal = s.glow * (0.65 + audioFrame.overall * 0.85);
 
     const heights = [];
-    const audioFrame = getAudioFrame(s.bars, s.audioInfluence / 100, s.audioSmooth / 100, s.beatSensitivity / 100);
     for (let i = 0; i < s.bars; i++) {
-      const norm      = i / Math.max(1, s.bars - 1);
-      const envelope  = 0.42 + 0.58 * Math.sin(norm * Math.PI);
+      const norm = i / Math.max(1, s.bars - 1);
+      const envelope = 0.42 + 0.58 * Math.sin(norm * Math.PI);
       const amplitude = audioFrame.bars[i] ?? 0;
-      const h         = (0.08 + amplitude * motionBoost) * waveHeight * envelope;
-      heights.push({ x: -waveWidth/2 + spacing * (i + 0.5), h });
+      const h = (0.08 + amplitude * motionBoost) * waveHeight * envelope;
+      heights.push({ x: -waveWidth / 2 + spacing * (i + 0.5), h });
     }
 
-    const isRadial = (s.barStyle === 'circle' || s.barStyle === 'arc');
+    const isRadial = s.barStyle === 'circle' || s.barStyle === 'arc';
 
-    ctx.shadowBlur  = glowVal;
+    ctx.shadowBlur = glowVal;
     ctx.shadowColor = rgba(0.95);
 
     if (s.barStyle === 'dots') {
       const dotR = Math.max(2.2, spacing * (s.dotSize / 100) * (1 + audioFrame.treble * 0.18));
       ctx.beginPath();
       for (const { x, h } of heights) {
-        const dots   = Math.max(2, Math.floor(h / 8));
+        const dots = Math.max(2, Math.floor(h / 8));
         const dotGap = h / dots;
         for (const side of [-1, 1]) {
           for (let j = 0; j < dots; j++) {
-            const dy    = centerY + side * (j * dotGap + dotGap * 0.5);
+            const dy = centerY + side * (j * dotGap + dotGap * 0.5);
             ctx.fillStyle = rgba(Math.max(0.12, (1 - (j / dots) * 0.7) * (0.85 + audioFrame.overall * 0.5)));
             ctx.moveTo(x + dotR, dy);
             ctx.arc(x, dy, dotR, 0, Math.PI * 2);
@@ -931,38 +1023,39 @@
     } else if (s.barStyle === 'classic') {
       const bw = spacing * 0.72;
       for (const { x, h } of heights) {
-        const alpha = 0.6 + audioFrame.overall * 0.4;
-        ctx.fillStyle = rgba(alpha);
-        ctx.fillRect(x - bw/2, centerY - h, bw, h);
-        ctx.fillRect(x - bw/2, centerY,     bw, h);
+        ctx.fillStyle = rgba(0.6 + audioFrame.overall * 0.4);
+        ctx.fillRect(x - bw / 2, centerY - h, bw, h);
+        ctx.fillRect(x - bw / 2, centerY, bw, h);
       }
     } else if (s.barStyle === 'mirror') {
       const bw = spacing * 0.65;
       for (const { x, h } of heights) {
         const grad = ctx.createLinearGradient(x, centerY - h, x, centerY + h);
-        grad.addColorStop(0,   rgba(0.0));
+        grad.addColorStop(0, rgba(0));
         grad.addColorStop(0.3, rgba(0.75 + audioFrame.bass * 0.25));
-        grad.addColorStop(0.5, rgba(1.0));
+        grad.addColorStop(0.5, rgba(1));
         grad.addColorStop(0.7, rgba(0.75 + audioFrame.bass * 0.25));
-        grad.addColorStop(1,   rgba(0.0));
+        grad.addColorStop(1, rgba(0));
         ctx.fillStyle = grad;
-        ctx.fillRect(x - bw/2, centerY - h, bw, h * 2);
+        ctx.fillRect(x - bw / 2, centerY - h, bw, h * 2);
       }
     } else if (s.barStyle === 'neon') {
       const lw = Math.max(2, spacing * 0.45);
+
       ctx.lineCap = 'round';
-      ctx.lineWidth   = lw * 0.35;
-      ctx.strokeStyle = rgba(1.0);
-      ctx.shadowBlur  = glowVal * 2.5;
+      ctx.lineWidth = lw * 0.35;
+      ctx.strokeStyle = rgba(1);
+      ctx.shadowBlur = glowVal * 2.5;
       ctx.beginPath();
       for (const { x, h } of heights) {
         ctx.moveTo(x, centerY - h);
         ctx.lineTo(x, centerY + h);
       }
       ctx.stroke();
-      ctx.lineWidth   = lw;
+
+      ctx.lineWidth = lw;
       ctx.strokeStyle = rgba(0.22 + audioFrame.overall * 0.2);
-      ctx.shadowBlur  = glowVal * 4;
+      ctx.shadowBlur = glowVal * 4;
       ctx.beginPath();
       for (const { x, h } of heights) {
         ctx.moveTo(x, centerY - h);
@@ -972,25 +1065,25 @@
       ctx.lineCap = 'butt';
     } else if (s.barStyle === 'circle') {
       ctx.save();
-      const innerR  = radius * 0.18;
-      const barLenMax = radius * 0.68;
+      const innerR = radius * 0.18;
+      const barLenMax = radius * 0.68 * ringPulse;
       for (let i = 0; i < s.bars; i++) {
-        const angle  = (i / s.bars) * Math.PI * 2 - Math.PI / 2;
-        const amp    = audioFrame.bars[i] ?? 0;
-        const len    = innerR + amp * barLenMax * (0.24 + (s.motion / 100) * 1.8);
-        const lw     = Math.max(1.5, spacing * 0.6);
-        const alpha  = 0.5 + amp * 0.5;
-        const x1     = Math.cos(angle) * innerR;
-        const y1     = Math.sin(angle) * innerR;
-        const x2     = Math.cos(angle) * len;
-        const y2     = Math.sin(angle) * len;
-        const grad   = ctx.createLinearGradient(x1, y1, x2, y2);
+        const angle = (i / s.bars) * Math.PI * 2 - Math.PI / 2;
+        const amp = audioFrame.bars[i] ?? 0;
+        const len = innerR + amp * barLenMax * (0.24 + (s.motion / 100) * 1.8);
+        const lw = Math.max(1.5, spacing * 0.6);
+        const alpha = 0.5 + amp * 0.5;
+        const x1 = Math.cos(angle) * innerR;
+        const y1 = Math.sin(angle) * innerR;
+        const x2 = Math.cos(angle) * len;
+        const y2 = Math.sin(angle) * len;
+        const grad = ctx.createLinearGradient(x1, y1, x2, y2);
         grad.addColorStop(0, rgba(0.1));
         grad.addColorStop(1, rgba(alpha));
         ctx.strokeStyle = grad;
-        ctx.lineWidth   = lw;
-        ctx.lineCap     = 'round';
-        ctx.shadowBlur  = s.glow * (0.5 + amp * 1.2);
+        ctx.lineWidth = lw;
+        ctx.lineCap = 'round';
+        ctx.shadowBlur = s.glow * (0.5 + amp * 1.2);
         ctx.shadowColor = rgba(0.9);
         ctx.beginPath();
         ctx.moveTo(x1, y1);
@@ -1000,64 +1093,73 @@
       ctx.restore();
     } else if (s.barStyle === 'arc') {
       ctx.save();
-      const arcR    = radius * 0.55;
+      const arcR = radius * 0.55 * ringPulse;
       const arcSpan = (Math.PI * 2) / s.bars;
       for (let i = 0; i < s.bars; i++) {
-        const amp    = audioFrame.bars[i] ?? 0;
-        const angle  = (i / s.bars) * Math.PI * 2 - Math.PI / 2;
-        const thick  = Math.max(2, spacing * 0.55 * (0.5 + amp));
+        const amp = audioFrame.bars[i] ?? 0;
+        const angle = (i / s.bars) * Math.PI * 2 - Math.PI / 2;
+        const thick = Math.max(2, spacing * 0.55 * (0.5 + amp));
         const arcLen = arcSpan * (0.1 + amp * 0.9);
-        const alpha  = 0.3 + amp * 0.7;
+        const alpha = 0.3 + amp * 0.7;
         ctx.strokeStyle = rgba(alpha);
-        ctx.lineWidth   = thick;
-        ctx.lineCap     = 'round';
-        ctx.shadowBlur  = s.glow * (0.4 + amp * 1.5);
+        ctx.lineWidth = thick;
+        ctx.lineCap = 'round';
+        ctx.shadowBlur = s.glow * (0.4 + amp * 1.5);
         ctx.shadowColor = rgba(0.9);
         ctx.beginPath();
-        ctx.arc(0, 0, arcR * (0.7 + amp * 0.6), angle - arcLen/2, angle + arcLen/2);
+        ctx.arc(0, 0, arcR * (0.7 + amp * 0.6), angle - arcLen / 2, angle + arcLen / 2);
         ctx.stroke();
       }
       ctx.restore();
     } else if (s.barStyle === 'ribbon') {
       const topPts = heights.map(({ x, h }) => ({ x, y: centerY - h }));
       const botPts = heights.map(({ x, h }) => ({ x, y: centerY + h }));
-      const grad   = ctx.createLinearGradient(-waveWidth/2, 0, waveWidth/2, 0);
-      const edge   = Math.min(0.45, s.fadeEdge / 100);
-      grad.addColorStop(0,       rgba(0));
-      grad.addColorStop(edge,    rgba(0.85 + audioFrame.overall * 0.15));
-      grad.addColorStop(1-edge,  rgba(0.85 + audioFrame.overall * 0.15));
-      grad.addColorStop(1,       rgba(0));
+      const grad = ctx.createLinearGradient(-waveWidth / 2, 0, waveWidth / 2, 0);
+      const edge = Math.min(0.45, s.fadeEdge / 100);
+
+      grad.addColorStop(0, rgba(0));
+      grad.addColorStop(edge, rgba(0.85 + audioFrame.overall * 0.15));
+      grad.addColorStop(1 - edge, rgba(0.85 + audioFrame.overall * 0.15));
+      grad.addColorStop(1, rgba(0));
+
       ctx.fillStyle = grad;
-      ctx.shadowBlur  = glowVal * 1.4;
+      ctx.shadowBlur = glowVal * 1.4;
       ctx.shadowColor = rgba(0.7);
+
       ctx.beginPath();
       ctx.moveTo(topPts[0].x, topPts[0].y);
+
       for (let i = 1; i < topPts.length; i++) {
-        const mx = (topPts[i-1].x + topPts[i].x) / 2;
-        ctx.quadraticCurveTo(topPts[i-1].x, topPts[i-1].y, mx, (topPts[i-1].y + topPts[i].y)/2);
+        const mx = (topPts[i - 1].x + topPts[i].x) / 2;
+        ctx.quadraticCurveTo(topPts[i - 1].x, topPts[i - 1].y, mx, (topPts[i - 1].y + topPts[i].y) / 2);
       }
-      ctx.lineTo(topPts[topPts.length-1].x, topPts[topPts.length-1].y);
-      ctx.lineTo(botPts[botPts.length-1].x, botPts[botPts.length-1].y);
+
+      ctx.lineTo(topPts[topPts.length - 1].x, topPts[topPts.length - 1].y);
+      ctx.lineTo(botPts[botPts.length - 1].x, botPts[botPts.length - 1].y);
+
       for (let i = botPts.length - 2; i >= 0; i--) {
-        const mx = (botPts[i+1].x + botPts[i].x) / 2;
-        ctx.quadraticCurveTo(botPts[i+1].x, botPts[i+1].y, mx, (botPts[i+1].y + botPts[i].y)/2);
+        const mx = (botPts[i + 1].x + botPts[i].x) / 2;
+        ctx.quadraticCurveTo(botPts[i + 1].x, botPts[i + 1].y, mx, (botPts[i + 1].y + botPts[i].y) / 2);
       }
+
       ctx.closePath();
       ctx.fill();
     } else if (s.barStyle === 'blocks') {
-      const bw        = spacing * 0.68;
+      const bw = spacing * 0.68;
       const blockSize = Math.max(3, bw * 0.85);
-      const gap       = bw * 0.15;
+      const gap = bw * 0.15;
+
       for (const { x, h } of heights) {
         const nBlocks = Math.max(1, Math.round(h / (blockSize + gap)));
         for (let j = 0; j < nBlocks; j++) {
           const alpha = (1 - j / nBlocks) * (0.6 + audioFrame.overall * 0.4);
           ctx.fillStyle = rgba(alpha);
-          ctx.shadowBlur  = j === 0 ? glowVal * 1.5 : glowVal * 0.4;
+          ctx.shadowBlur = j === 0 ? glowVal * 1.5 : glowVal * 0.4;
           ctx.shadowColor = rgba(0.8);
+
           const yOff = j * (blockSize + gap) + blockSize / 2;
-          ctx.fillRect(x - bw/2, centerY - yOff - blockSize/2, bw, blockSize);
-          ctx.fillRect(x - bw/2, centerY + yOff - blockSize/2, bw, blockSize);
+          ctx.fillRect(x - bw / 2, centerY - yOff - blockSize / 2, bw, blockSize);
+          ctx.fillRect(x - bw / 2, centerY + yOff - blockSize / 2, bw, blockSize);
         }
       }
     }
@@ -1069,8 +1171,8 @@
       const blurAmt = Math.round(s.softness * 1.5 + (s.bloom / 100) * 8 + audioFrame.bass * 6);
       if (blurAmt > 0) ctx.filter = `blur(${blurAmt}px)`;
       ctx.strokeStyle = rgba(0.10 + audioFrame.overall * 0.14);
-      ctx.lineWidth   = spacing * 0.7;
-      ctx.shadowBlur  = s.glow + s.softness * 2 + audioFrame.bass * 12;
+      ctx.lineWidth = spacing * 0.7;
+      ctx.shadowBlur = s.glow + s.softness * 2 + audioFrame.bass * 12;
       ctx.shadowColor = rgba(0.9);
       ctx.beginPath();
       for (const { x, h } of heights) {
@@ -1084,83 +1186,91 @@
     }
 
     ensureParticles(s.dustAmount);
-    ctx.shadowBlur  = s.glow * 0.8;
+    ctx.shadowBlur = s.glow * 0.8;
     ctx.shadowColor = rgba(0.85);
+
     for (let i = 0; i < particles.length; i++) {
-      const p      = particles[i];
-      const base   = heights[i % heights.length];
-      const delay  = s.dustDelay / 100;
+      const p = particles[i];
+      const base = heights[i % heights.length];
+      const delay = s.dustDelay / 100;
       const localT = t * (0.015 + s.dustSpeed / 5000 + audioFrame.treble * 0.02) - p.age * delay;
       const vSwing = Math.sin(localT + p.seed) * base.h * (0.16 + audioFrame.mid * 0.18);
       const driftX = Math.cos(localT * 0.7 + p.seed) * (s.dustSpread * 0.35) + p.drift * 12;
       const driftY = Math.sin(localT * 1.2 + p.seed * 1.7) * (s.dustSpread * 0.18);
-      const a      = (s.dustAlpha/100) * (0.30 + 0.70*(0.5+0.5*Math.sin(localT+p.seed))) * (0.75+audioFrame.treble*0.65);
-      const sz     = s.dustSize * (0.55+0.8*(0.5+0.5*Math.sin(localT*0.8+p.seed))) * (0.8+audioFrame.treble*0.28);
-      drawWavelet(base.x + driftX, centerY + vSwing + driftY, sz, a, color, Math.sin(localT+p.seed)*0.8);
+      const a = (s.dustAlpha / 100) *
+        (0.30 + 0.70 * (0.5 + 0.5 * Math.sin(localT + p.seed))) *
+        (0.75 + audioFrame.treble * 0.65);
+      const sz = s.dustSize *
+        (0.55 + 0.8 * (0.5 + 0.5 * Math.sin(localT * 0.8 + p.seed))) *
+        (0.8 + audioFrame.treble * 0.28);
+
+      drawWavelet(base.x + driftX, centerY + vSwing + driftY, sz, a, color, Math.sin(localT + p.seed) * 0.8);
     }
+
     ctx.shadowBlur = 0;
 
     if (!isRadial) {
-      const fade = ctx.createLinearGradient(-waveWidth/2, 0, waveWidth/2, 0);
+      const fade = ctx.createLinearGradient(-waveWidth / 2, 0, waveWidth / 2, 0);
       const edge = Math.min(0.45, s.fadeEdge / 100);
-      fade.addColorStop(0,       'rgba(255,255,255,0)');
-      fade.addColorStop(edge,    'rgba(255,255,255,1)');
-      fade.addColorStop(1-edge,  'rgba(255,255,255,1)');
-      fade.addColorStop(1,       'rgba(255,255,255,0)');
+      fade.addColorStop(0, 'rgba(255,255,255,0)');
+      fade.addColorStop(edge, 'rgba(255,255,255,1)');
+      fade.addColorStop(1 - edge, 'rgba(255,255,255,1)');
+      fade.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.globalCompositeOperation = 'destination-in';
       ctx.fillStyle = fade;
-      ctx.fillRect(-waveWidth/2, centerY - waveHeight - 120, waveWidth, waveHeight * 2 + 240);
+      ctx.fillRect(-waveWidth / 2, centerY - waveHeight - 120, waveWidth, waveHeight * 2 + 240);
       ctx.globalCompositeOperation = 'source-over';
     }
 
     ctx.restore();
   }
 
-  // ─── Settings ─────────────────────────────────────────────────────────────────
   function getSettings() {
     return {
-      barStyle:        el.barStyle.value,
-      bars:            parseInt(el.bars.value, 10),
-      glow:            parseInt(el.glow.value, 10),
-      motion:          parseInt(el.motion.value, 10),
-      audioInfluence:  parseInt(el.audioInfluence.value, 10),
-      audioSmooth:     parseInt(el.audioSmooth.value, 10),
-      waveWidth:       parseInt(el.waveWidth.value, 10),
-      waveHeight:      parseInt(el.waveHeight.value, 10),
-      waveOffsetY:     parseInt(el.waveOffsetY.value, 10),
-      dotSize:         parseInt(el.dotSize.value, 10),
-      softness:        parseInt(el.softness.value, 10),
-      fadeEdge:        parseInt(el.fadeEdge.value, 10),
-      ringThickness:   parseInt(el.ringThickness.value, 10) / 10,
-      waveColor:       el.waveColor.value || '#ffffff',
+      barStyle: el.barStyle.value,
+      bars: parseInt(el.bars.value, 10),
+      glow: parseInt(el.glow.value, 10),
+      motion: parseInt(el.motion.value, 10),
+      audioInfluence: parseInt(el.audioInfluence.value, 10),
+      audioSmooth: parseInt(el.audioSmooth.value, 10),
+      waveWidth: parseInt(el.waveWidth.value, 10),
+      waveHeight: parseInt(el.waveHeight.value, 10),
+      waveOffsetY: parseInt(el.waveOffsetY.value, 10),
+      dotSize: parseInt(el.dotSize.value, 10),
+      softness: parseInt(el.softness.value, 10),
+      fadeEdge: parseInt(el.fadeEdge.value, 10),
+      ringThickness: parseInt(el.ringThickness.value, 10) / 10,
+      waveColor: el.waveColor.value || '#ffffff',
       beatSensitivity: parseInt(el.beatSensitivity.value, 10),
-      bloom:           parseInt(el.bloom.value, 10),
-      colorShift:      parseInt(el.colorShift.value, 10),
-      ringPulse:       parseInt(el.ringPulse.value, 10),
-      dustAmount:      parseInt(el.dustAmount.value, 10),
-      dustDelay:       parseInt(el.dustDelay.value, 10),
-      dustSpeed:       parseInt(el.dustSpeed.value, 10),
-      dustSize:        parseInt(el.dustSize.value, 10),
-      dustSpread:      parseInt(el.dustSpread.value, 10),
-      dustAlpha:       parseInt(el.dustAlpha.value, 10),
-      vizScale:        parseInt(el.vizScale.value, 10) / 100,
-      vizOffsetX:      parseInt(el.vizOffsetX.value, 10),
-      vizOffsetY:      parseInt(el.vizOffsetY.value, 10),
-      bgScale:         parseInt(el.bgScale.value, 10) / 100,
-      bgOffsetX:       parseInt(el.bgOffsetX.value, 10),
-      bgOffsetY:       parseInt(el.bgOffsetY.value, 10),
-      bgOpacity:       parseInt(el.bgOpacity.value, 10)
+      bloom: parseInt(el.bloom.value, 10),
+      colorShift: parseInt(el.colorShift.value, 10),
+      ringPulse: parseInt(el.ringPulse.value, 10),
+      dustAmount: parseInt(el.dustAmount.value, 10),
+      dustDelay: parseInt(el.dustDelay.value, 10),
+      dustSpeed: parseInt(el.dustSpeed.value, 10),
+      dustSize: parseInt(el.dustSize.value, 10),
+      dustSpread: parseInt(el.dustSpread.value, 10),
+      dustAlpha: parseInt(el.dustAlpha.value, 10),
+      vizScale: parseInt(el.vizScale.value, 10) / 100,
+      vizOffsetX: parseInt(el.vizOffsetX.value, 10),
+      vizOffsetY: parseInt(el.vizOffsetY.value, 10),
+      bgScale: parseInt(el.bgScale.value, 10) / 100,
+      bgOffsetX: parseInt(el.bgOffsetX.value, 10),
+      bgOffsetY: parseInt(el.bgOffsetY.value, 10),
+      bgOpacity: parseInt(el.bgOpacity.value, 10)
     };
   }
 
-  // ─── Scene draw ───────────────────────────────────────────────────────────────
-  function drawScene(dt) {
+  function drawScene() {
     const s = getSettings();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     drawFittedAsset(bgLayer, {
-      scale: s.bgScale, opacity: s.bgOpacity / 100,
-      offsetX: s.bgOffsetX, offsetY: s.bgOffsetY, cover: true
+      scale: s.bgScale,
+      opacity: s.bgOpacity / 100,
+      offsetX: s.bgOffsetX,
+      offsetY: s.bgOffsetY,
+      cover: true
     });
 
     const baseRadius = Math.min(canvas.width, canvas.height) * 0.30;
@@ -1171,106 +1281,183 @@
     drawBadge(cx, cy, radius, s);
   }
 
-  // ─── Animation loop (ALWAYS runs for live controls) ──────────────────────────
   function frame(timestamp) {
     const dt = lastTimestamp ? Math.min((timestamp - lastTimestamp) / 16.667, 3) : 1;
     lastTimestamp = timestamp;
 
-    drawScene(dt);
-    t += dt;                               // always advance for fallback animation
+    drawScene();
+    t += dt;
     rafId = requestAnimationFrame(frame);
   }
 
-  // ─── FFT size watcher ────────────────────────────────────────────────────────
   el.fftSize.addEventListener('input', () => {
     setFftSize(+el.fftSize.value);
   });
 
-  // ─── Asset loading ───────────────────────────────────────────────────────────
   function resizeFromPreset() {
     const [w, h] = el.canvasPreset.value.split('x').map(Number);
-    canvas.width = w; canvas.height = h;
+    canvas.width = w;
+    canvas.height = h;
     setStatus(`Canvas: ${w} × ${h}`);
+    drawScene();
   }
 
   function loadBackgroundFromFile(file) {
     if (!file) return;
+
+    clearBackground();
+
     const url = URL.createObjectURL(file);
     const isVideo = file.type.startsWith('video/') || /\.(webm|mp4|mov)$/i.test(file.name);
 
     if (isVideo) {
       const video = document.createElement('video');
-      Object.assign(video, { src: url, muted: true, loop: true, autoplay: true, playsInline: true });
+      Object.assign(video, {
+        src: url,
+        muted: true,
+        loop: true,
+        autoplay: true,
+        playsInline: true
+      });
       video.crossOrigin = 'anonymous';
+
       video.addEventListener('loadedmetadata', async () => {
-        try { if (running) await video.play(); } catch(e) {}
-        bgLayer = { kind:'video', element:video, width:video.videoWidth, height:video.videoHeight, ready:true, url };
+        try {
+          if (running) await video.play();
+        } catch (e) {}
+
+        bgLayer = {
+          kind: 'video',
+          element: video,
+          width: video.videoWidth,
+          height: video.videoHeight,
+          ready: true,
+          url
+        };
         setStatus(`Background video: ${file.name}`);
       }, { once: true });
-      video.addEventListener('error', () => { setStatus(`Could not load background video.`); URL.revokeObjectURL(url); });
+
+      video.addEventListener('error', () => {
+        setStatus('Could not load background video.');
+        URL.revokeObjectURL(url);
+      });
+
       return;
     }
 
     const img = new Image();
     img.onload = () => {
-      bgLayer = { kind:'image', element:img, width:img.naturalWidth, height:img.naturalHeight, ready:true, url };
+      bgLayer = {
+        kind: 'image',
+        element: img,
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+        ready: true,
+        url
+      };
       setStatus(`Background image: ${file.name}`);
     };
-    img.onerror = () => { setStatus(`Could not load background image.`); URL.revokeObjectURL(url); };
+    img.onerror = () => {
+      setStatus('Could not load background image.');
+      URL.revokeObjectURL(url);
+    };
     img.src = url;
   }
 
   function clearBackground() {
     if (!bgLayer) return;
-    if (bgLayer.kind === 'video') { bgLayer.element.pause(); bgLayer.element.removeAttribute('src'); bgLayer.element.load(); }
+
+    if (bgLayer.kind === 'video') {
+      bgLayer.element.pause();
+      bgLayer.element.removeAttribute('src');
+      bgLayer.element.load();
+    }
+
     if (bgLayer.url) URL.revokeObjectURL(bgLayer.url);
     bgLayer = null;
   }
 
-  // ─── Recording ───────────────────────────────────────────────────────────────
   function getSupportedMime(preferred) {
     const candidates = preferred === 'auto'
-      ? ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
-      : [preferred,'video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+      ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+      : [preferred, 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+
     return candidates.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
   }
 
   function buildRecordingStream() {
     const out = new MediaStream();
-    canvas.captureStream(60).getVideoTracks().forEach(t => out.addTrack(t));
+    canvas.captureStream(60).getVideoTracks().forEach(track => out.addTrack(track));
+
     if (audioCaptureNode?.stream) {
-      audioCaptureNode.stream.getAudioTracks().forEach(t => out.addTrack(t));
+      audioCaptureNode.stream.getAudioTracks().forEach(track => out.addTrack(track));
     } else if (audioLayer?.element?.captureStream) {
-      audioLayer.element.captureStream().getAudioTracks().forEach(t => out.addTrack(t));
+      audioLayer.element.captureStream().getAudioTracks().forEach(track => out.addTrack(track));
     }
+
     return out;
   }
 
   function startRecording() {
-    if (!window.MediaRecorder) { setStatus('MediaRecorder unavailable.'); return; }
-    if (recorder && recorder.state !== 'inactive') { setStatus('Already recording.'); return; }
+    if (!window.MediaRecorder) {
+      setStatus('MediaRecorder unavailable.');
+      return;
+    }
+
+    if (recorder && recorder.state !== 'inactive') {
+      setStatus('Already recording.');
+      return;
+    }
+
     currentMime = getSupportedMime(el.recordMime.value);
-    if (!currentMime) { setStatus('No supported codec found.'); return; }
+    if (!currentMime) {
+      setStatus('No supported codec found.');
+      return;
+    }
+
     stream = buildRecordingStream();
     recordedChunks = [];
+
     try {
-      recorder = new MediaRecorder(stream, { mimeType: currentMime, videoBitsPerSecond: 12000000, audioBitsPerSecond: 192000 });
-    } catch(e) { setStatus(`Could not start recorder: ${currentMime}`); return; }
-    recorder.ondataavailable = e => { if (e.data?.size > 0) recordedChunks.push(e.data); };
+      recorder = new MediaRecorder(stream, {
+        mimeType: currentMime,
+        videoBitsPerSecond: 12000000,
+        audioBitsPerSecond: 192000
+      });
+    } catch (e) {
+      setStatus(`Could not start recorder: ${currentMime}`);
+      return;
+    }
+
+    recorder.ondataavailable = (e) => {
+      if (e.data?.size > 0) recordedChunks.push(e.data);
+    };
+
     recorder.onstop = () => {
       const blob = new Blob(recordedChunks, { type: currentMime || 'video/webm' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `iusv-${new Date().toISOString().replace(/[:.]/g,'-')}.webm`;
-      document.body.appendChild(a); a.click(); a.remove();
+      a.download = `iusv-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-      el.startRecBtn.disabled = false; el.stopRecBtn.disabled = true;
+
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+
+      el.startRecBtn.disabled = false;
+      el.stopRecBtn.disabled = true;
       setStatus(`Saved as WebM (${currentMime}).`);
     };
+
     recorder.onerror = () => setStatus('Recording failed.');
     recorder.start(200);
-    el.startRecBtn.disabled = true; el.stopRecBtn.disabled = false;
+
+    el.startRecBtn.disabled = true;
+    el.stopRecBtn.disabled = false;
     setStatus(`Recording… ${stream.getAudioTracks().length ? '(audio + video)' : '(video only)'}`);
   }
 
@@ -1278,40 +1465,76 @@
     if (recorder && recorder.state !== 'inactive') recorder.stop();
   }
 
-  // ─── Play / Pause ─────────────────────────────────────────────────────────────
   async function togglePlayPause() {
     running = !running;
     el.playPauseBtn.textContent = running ? 'Pause' : 'Play';
+
     if (running) await resumeAudioContext();
-    if (bgLayer?.kind === 'video')    { running ? bgLayer.element.play().catch(()=>{}) : bgLayer.element.pause(); }
+
+    if (bgLayer?.kind === 'video') {
+      if (running) {
+        bgLayer.element.play().catch(() => {});
+      } else {
+        bgLayer.element.pause();
+      }
+    }
+
     if (audioLayer?.element) {
       if (running) {
-        audioLayer.element.play().catch(() => setStatus('Press Play again — browser blocked autoplay.'));
+        audioLayer.element.play().catch(() => {
+          setStatus('Press Play again — browser blocked autoplay.');
+        });
       } else {
         audioLayer.element.pause();
       }
     }
+
     updateSeekUi(true);
   }
 
-  // ─── Event wiring ─────────────────────────────────────────────────────────────
-  el.musicInput.addEventListener('change', e => { loadAudioFromFile(e.target.files[0]); e.target.value = ''; });
-  el.musicSeek.addEventListener('input',  () => { isSeeking = true; if (audioLayer?.element) { audioLayer.element.currentTime = +el.musicSeek.value || 0; updateSeekUi(true); } });
-  el.musicSeek.addEventListener('change', () => { isSeeking = false; updateSeekUi(true); });
-  el.bgInput.addEventListener('change', e => { loadBackgroundFromFile(e.target.files[0]); e.target.value = ''; });
-  el.clearMusicBtn.addEventListener('click', () => { clearMusic(); setStatus('Music cleared.'); });
-  el.clearBgBtn.addEventListener('click', () => { clearBackground(); setStatus('Background cleared.'); });
-  el.playPauseBtn.addEventListener('click', togglePlayPause);
-  el.startRecBtn.addEventListener('click', startRecording);
-  el.stopRecBtn.addEventListener('click',  stopRecording);
-  el.canvasPreset.addEventListener('change', resizeFromPreset);
-
-  // ─── Live color update even when paused ──────────────────────────────────────
-  el.waveColor.addEventListener('input', () => {
-    drawScene(1);   // force redraw instantly on color change
+  el.musicInput.addEventListener('change', e => {
+    loadAudioFromFile(e.target.files[0]);
+    e.target.value = '';
   });
 
-  // ─── Default background loader ───────────────────────────────────────────────
+  el.musicSeek.addEventListener('input', () => {
+    isSeeking = true;
+    if (audioLayer?.element) {
+      audioLayer.element.currentTime = +el.musicSeek.value || 0;
+      updateSeekUi(true);
+    }
+  });
+
+  el.musicSeek.addEventListener('change', () => {
+    isSeeking = false;
+    updateSeekUi(true);
+  });
+
+  el.bgInput.addEventListener('change', e => {
+    loadBackgroundFromFile(e.target.files[0]);
+    e.target.value = '';
+  });
+
+  el.clearMusicBtn.addEventListener('click', () => {
+    clearMusic();
+    setStatus('Music cleared.');
+  });
+
+  el.clearBgBtn.addEventListener('click', () => {
+    clearBackground();
+    setStatus('Background cleared.');
+  });
+
+  el.playPauseBtn.addEventListener('click', togglePlayPause);
+  el.startRecBtn.addEventListener('click', startRecording);
+  el.stopRecBtn.addEventListener('click', stopRecording);
+  el.canvasPreset.addEventListener('change', resizeFromPreset);
+
+  el.waveColor.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--accent', el.waveColor.value || '#ffffff');
+    drawScene();
+  });
+
   function loadDefaultBackground() {
     const img = new Image();
     img.onload = () => {
@@ -1332,17 +1555,17 @@
     img.src = ASSET_DEFAULT_SRC;
   }
 
-  // ─── Drag + Pinch gestures for background ────────────────────────────────────
   (function attachCanvasGestures() {
     let dragging = false;
     let pointerId = null;
-    let lastX = 0, lastY = 0;
+    let lastX = 0;
+    let lastY = 0;
     const SENS = 1.8;
 
     function getCanvasScale() {
       const rect = canvas.getBoundingClientRect();
       return {
-        x: canvas.width  / (rect.width  || 1),
+        x: canvas.width / (rect.width || 1),
         y: canvas.height / (rect.height || 1)
       };
     }
@@ -1354,8 +1577,17 @@
 
     function nudgeBg(dx, dy) {
       const scale = getCanvasScale();
-      let nx = clamp(parseInt(el.bgOffsetX.value, 10) + dx * scale.x * SENS, parseInt(el.bgOffsetX.min,10), parseInt(el.bgOffsetX.max,10));
-      let ny = clamp(parseInt(el.bgOffsetY.value, 10) + dy * scale.y * SENS, parseInt(el.bgOffsetY.min,10), parseInt(el.bgOffsetY.max,10));
+      const nx = clamp(
+        parseInt(el.bgOffsetX.value, 10) + dx * scale.x * SENS,
+        parseInt(el.bgOffsetX.min, 10),
+        parseInt(el.bgOffsetX.max, 10)
+      );
+      const ny = clamp(
+        parseInt(el.bgOffsetY.value, 10) + dy * scale.y * SENS,
+        parseInt(el.bgOffsetY.min, 10),
+        parseInt(el.bgOffsetY.max, 10)
+      );
+
       el.bgOffsetX.value = Math.round(nx);
       el.bgOffsetY.value = Math.round(ny);
       updateReadout(el.bgOffsetX, 'vBgOffsetX');
@@ -1393,6 +1625,7 @@
     canvas.addEventListener('lostpointercapture', endDrag);
 
     let lastPinchDist = 0;
+
     canvas.addEventListener('touchstart', e => {
       if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1408,28 +1641,33 @@
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const dist = Math.hypot(dx, dy);
         const delta = (dist - lastPinchDist) * 0.18;
-        let newScale = parseInt(el.bgScale.value) + delta;
+
+        let newScale = parseInt(el.bgScale.value, 10) + delta;
         newScale = clamp(Math.round(newScale), 20, 250);
+
         el.bgScale.value = newScale;
         const out = document.getElementById('vBgScale');
         if (out) out.textContent = newScale;
+
         lastPinchDist = dist;
         e.preventDefault();
       }
     }, { passive: false });
 
-    canvas.addEventListener('touchend', () => { lastPinchDist = 0; });
+    canvas.addEventListener('touchend', () => {
+      lastPinchDist = 0;
+    });
 
     canvas.style.cursor = 'grab';
     canvas.style.touchAction = 'none';
     canvas.title = 'Drag to reposition background • Pinch with two fingers to resize background';
   })();
 
-  // ─── Init ─────────────────────────────────────────────────────────────────────
   resizeFromPreset();
   updateSeekUi(true);
+  document.documentElement.style.setProperty('--accent', el.waveColor.value || '#ffffff');
   loadDefaultBackground();
-  frame(performance.now());   // visual loop always runs
+  frame(performance.now());
 </script>
 </body>
 </html>
