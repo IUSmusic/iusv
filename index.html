@@ -354,6 +354,19 @@
 
         <div class="ctrl-section">— Wave</div>
 
+        <label style="grid-column:1/-1">Bar style
+          <select id="barStyle">
+            <option value="dots" selected>Dots (default)</option>
+            <option value="classic">Classic bars</option>
+            <option value="mirror">Mirror bars</option>
+            <option value="neon">Neon tubes</option>
+            <option value="circle">Radial circle</option>
+            <option value="arc">Arc burst</option>
+            <option value="ribbon">Ribbon wave</option>
+            <option value="blocks">Stacked blocks</option>
+          </select>
+        </label>
+
         <label><span>Bars <em id="vBars">32</em></span>
           <input id="bars" type="range" min="20" max="64" step="1" value="32">
         </label>
@@ -491,7 +504,7 @@
   // ─── DOM element map ─────────────────────────────────────────────────────────
   const el = {};
   [
-    'bars','glow','motion','audioInfluence','audioSmooth','waveWidth','waveHeight','waveOffsetY',
+    'barStyle','bars','glow','motion','audioInfluence','audioSmooth','waveWidth','waveHeight','waveOffsetY',
     'dotSize','softness','fadeEdge','ringThickness','waveColor',
     'beatSensitivity','bloom','colorShift','ringPulse','fftSize',
     'dustAmount','dustDelay','dustSpeed','dustSize','dustSpread','dustAlpha',
@@ -954,78 +967,229 @@
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // ── Wave + dots (clipped to inner circle) ────────────────────────────────
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * 0.86, 0, Math.PI * 2);
-    ctx.clip();
-
-    const waveWidth  = radius * (s.waveWidth / 100);
-    const waveHeight = radius * (s.waveHeight / 100) * (1 + audioFrame.bass * 0.24);
-    const spacing    = waveWidth / s.bars;
-    const centerY    = s.waveOffsetY; // 0 = perfectly centred; user-adjustable
+    // ── Shared wave geometry ────────────────────────────────────────────────
+    const waveWidth   = radius * (s.waveWidth / 100);
+    const waveHeight  = radius * (s.waveHeight / 100) * (1 + audioFrame.bass * 0.24);
+    const spacing     = waveWidth / s.bars;
+    const centerY     = s.waveOffsetY;
     const motionBoost = 0.24 + (s.motion / 100) * 1.8;
+    const glowVal     = s.glow * (0.65 + audioFrame.overall * 0.85);
+    const rgba        = (a) => `rgba(${color.r},${color.g},${color.b},${a})`;
 
-    // Edge fade mask
-    const fade = ctx.createLinearGradient(-waveWidth/2, 0, waveWidth/2, 0);
-    const edge = Math.min(0.45, s.fadeEdge / 100);
-    fade.addColorStop(0, 'rgba(255,255,255,0)');
-    fade.addColorStop(edge, 'rgba(255,255,255,1)');
-    fade.addColorStop(1 - edge, 'rgba(255,255,255,1)');
-    fade.addColorStop(1, 'rgba(255,255,255,0)');
-
+    // Build per-bar heights (used by all styles + dust)
     const heights = [];
-    const glowVal = s.glow * (0.65 + audioFrame.overall * 0.85);
-
-    // Batch dots: group by shadow settings to reduce state changes
-    ctx.shadowBlur = glowVal;
-    ctx.shadowColor = `rgba(${color.r},${color.g},${color.b},0.95)`;
-
     for (let i = 0; i < s.bars; i++) {
-      const x = -waveWidth/2 + spacing * (i + 0.5);
-      const norm = i / Math.max(1, s.bars - 1);
-      const envelope = 0.42 + 0.58 * Math.sin(norm * Math.PI);
+      const norm      = i / Math.max(1, s.bars - 1);
+      const envelope  = 0.42 + 0.58 * Math.sin(norm * Math.PI);
       const amplitude = audioFrame.bars[i] ?? 0;
-      const h = (0.08 + amplitude * motionBoost) * waveHeight * envelope;
-      heights.push({ x, h });
+      const h         = (0.08 + amplitude * motionBoost) * waveHeight * envelope;
+      heights.push({ x: -waveWidth/2 + spacing * (i + 0.5), h });
+    }
 
-      const dots = Math.max(2, Math.floor(h / 8));
-      const dotGap = h / dots;
-      const r = Math.max(2.2, spacing * (s.dotSize / 100) * (1 + audioFrame.treble * 0.18));
-
+    // ── Clip inner circle (all linear styles) ────────────────────────────────
+    const isRadial = (s.barStyle === 'circle' || s.barStyle === 'arc');
+    if (!isRadial) {
+      ctx.save();
       ctx.beginPath();
-      for (const side of [-1, 1]) {
-        for (let j = 0; j < dots; j++) {
-          const dy = centerY + side * (j * dotGap + dotGap * 0.5);
-          const alpha = Math.max(0.12, (1 - (j / dots) * 0.7) * (0.85 + audioFrame.overall * 0.5));
-          ctx.fillStyle = `rgba(${color.r},${color.g},${color.b},${alpha})`;
-          ctx.moveTo(x + r, dy);
-          ctx.arc(x, dy, r, 0, Math.PI * 2);
+      ctx.arc(0, 0, radius * 0.86, 0, Math.PI * 2);
+      ctx.clip();
+    }
+
+    ctx.shadowBlur  = glowVal;
+    ctx.shadowColor = rgba(0.95);
+
+    // ══ BAR STYLE DISPATCHER ════════════════════════════════════════════════
+
+    if (s.barStyle === 'dots') {
+      // ── Original dot columns ──────────────────────────────────────────────
+      const dotR = Math.max(2.2, spacing * (s.dotSize / 100) * (1 + audioFrame.treble * 0.18));
+      ctx.beginPath();
+      for (const { x, h } of heights) {
+        const dots   = Math.max(2, Math.floor(h / 8));
+        const dotGap = h / dots;
+        for (const side of [-1, 1]) {
+          for (let j = 0; j < dots; j++) {
+            const dy    = centerY + side * (j * dotGap + dotGap * 0.5);
+            ctx.fillStyle = rgba(Math.max(0.12, (1 - (j / dots) * 0.7) * (0.85 + audioFrame.overall * 0.5)));
+            ctx.moveTo(x + dotR, dy);
+            ctx.arc(x, dy, dotR, 0, Math.PI * 2);
+          }
         }
       }
       ctx.fill();
+
+    } else if (s.barStyle === 'classic') {
+      // ── Solid filled rectangles, symmetric up/down ───────────────────────
+      const bw = spacing * 0.72;
+      for (const { x, h } of heights) {
+        const alpha = 0.6 + audioFrame.overall * 0.4;
+        ctx.fillStyle = rgba(alpha);
+        ctx.fillRect(x - bw/2, centerY - h, bw, h);
+        ctx.fillRect(x - bw/2, centerY,     bw, h);
+      }
+
+    } else if (s.barStyle === 'mirror') {
+      // ── Gradient-filled mirror bars ───────────────────────────────────────
+      const bw = spacing * 0.65;
+      for (const { x, h } of heights) {
+        const grad = ctx.createLinearGradient(x, centerY - h, x, centerY + h);
+        grad.addColorStop(0,   rgba(0.0));
+        grad.addColorStop(0.3, rgba(0.75 + audioFrame.bass * 0.25));
+        grad.addColorStop(0.5, rgba(1.0));
+        grad.addColorStop(0.7, rgba(0.75 + audioFrame.bass * 0.25));
+        grad.addColorStop(1,   rgba(0.0));
+        ctx.fillStyle = grad;
+        ctx.fillRect(x - bw/2, centerY - h, bw, h * 2);
+      }
+
+    } else if (s.barStyle === 'neon') {
+      // ── Neon glowing stroked tubes ────────────────────────────────────────
+      const lw = Math.max(2, spacing * 0.45);
+      ctx.lineCap = 'round';
+      // Inner bright stroke
+      ctx.lineWidth   = lw * 0.35;
+      ctx.strokeStyle = rgba(1.0);
+      ctx.shadowBlur  = glowVal * 2.5;
+      ctx.beginPath();
+      for (const { x, h } of heights) {
+        ctx.moveTo(x, centerY - h);
+        ctx.lineTo(x, centerY + h);
+      }
+      ctx.stroke();
+      // Outer soft halo
+      ctx.lineWidth   = lw;
+      ctx.strokeStyle = rgba(0.22 + audioFrame.overall * 0.2);
+      ctx.shadowBlur  = glowVal * 4;
+      ctx.beginPath();
+      for (const { x, h } of heights) {
+        ctx.moveTo(x, centerY - h);
+        ctx.lineTo(x, centerY + h);
+      }
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+
+    } else if (s.barStyle === 'circle') {
+      // ── Radial circle — bars shoot outward from centre ────────────────────
+      ctx.save();
+      ctx.translate(0, 0); // already at cx,cy from outer save
+      const innerR  = radius * 0.18;
+      const barLenMax = radius * 0.68;
+      for (let i = 0; i < s.bars; i++) {
+        const angle  = (i / s.bars) * Math.PI * 2 - Math.PI / 2;
+        const amp    = audioFrame.bars[i] ?? 0;
+        const len    = innerR + amp * barLenMax * (0.24 + (s.motion / 100) * 1.8);
+        const lw     = Math.max(1.5, spacing * 0.6);
+        const alpha  = 0.5 + amp * 0.5;
+        const x1     = Math.cos(angle) * innerR;
+        const y1     = Math.sin(angle) * innerR;
+        const x2     = Math.cos(angle) * len;
+        const y2     = Math.sin(angle) * len;
+        // gradient per bar
+        const grad   = ctx.createLinearGradient(x1, y1, x2, y2);
+        grad.addColorStop(0, rgba(0.1));
+        grad.addColorStop(1, rgba(alpha));
+        ctx.strokeStyle = grad;
+        ctx.lineWidth   = lw;
+        ctx.lineCap     = 'round';
+        ctx.shadowBlur  = s.glow * (0.5 + amp * 1.2);
+        ctx.shadowColor = rgba(0.9);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+    } else if (s.barStyle === 'arc') {
+      // ── Arc burst — arcs arranged around a circle ─────────────────────────
+      ctx.save();
+      const arcR    = radius * 0.55;
+      const arcSpan = (Math.PI * 2) / s.bars;
+      for (let i = 0; i < s.bars; i++) {
+        const amp    = audioFrame.bars[i] ?? 0;
+        const angle  = (i / s.bars) * Math.PI * 2 - Math.PI / 2;
+        const thick  = Math.max(2, spacing * 0.55 * (0.5 + amp));
+        const arcLen = arcSpan * (0.1 + amp * 0.9);
+        const alpha  = 0.3 + amp * 0.7;
+        ctx.strokeStyle = rgba(alpha);
+        ctx.lineWidth   = thick;
+        ctx.lineCap     = 'round';
+        ctx.shadowBlur  = s.glow * (0.4 + amp * 1.5);
+        ctx.shadowColor = rgba(0.9);
+        ctx.beginPath();
+        ctx.arc(0, 0, arcR * (0.7 + amp * 0.6), angle - arcLen/2, angle + arcLen/2);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+    } else if (s.barStyle === 'ribbon') {
+      // ── Smooth ribbon wave (filled bezier) ───────────────────────────────
+      const topPts = heights.map(({ x, h }) => ({ x, y: centerY - h }));
+      const botPts = heights.map(({ x, h }) => ({ x, y: centerY + h }));
+      const grad   = ctx.createLinearGradient(-waveWidth/2, 0, waveWidth/2, 0);
+      const edge   = Math.min(0.45, s.fadeEdge / 100);
+      grad.addColorStop(0,       rgba(0));
+      grad.addColorStop(edge,    rgba(0.85 + audioFrame.overall * 0.15));
+      grad.addColorStop(1-edge,  rgba(0.85 + audioFrame.overall * 0.15));
+      grad.addColorStop(1,       rgba(0));
+      ctx.fillStyle = grad;
+      ctx.shadowBlur  = glowVal * 1.4;
+      ctx.shadowColor = rgba(0.7);
+      ctx.beginPath();
+      // top curve
+      ctx.moveTo(topPts[0].x, topPts[0].y);
+      for (let i = 1; i < topPts.length; i++) {
+        const mx = (topPts[i-1].x + topPts[i].x) / 2;
+        ctx.quadraticCurveTo(topPts[i-1].x, topPts[i-1].y, mx, (topPts[i-1].y + topPts[i].y)/2);
+      }
+      ctx.lineTo(topPts[topPts.length-1].x, topPts[topPts.length-1].y);
+      // bottom curve reversed
+      ctx.lineTo(botPts[botPts.length-1].x, botPts[botPts.length-1].y);
+      for (let i = botPts.length - 2; i >= 0; i--) {
+        const mx = (botPts[i+1].x + botPts[i].x) / 2;
+        ctx.quadraticCurveTo(botPts[i+1].x, botPts[i+1].y, mx, (botPts[i+1].y + botPts[i].y)/2);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+    } else if (s.barStyle === 'blocks') {
+      // ── Stacked square blocks ─────────────────────────────────────────────
+      const bw        = spacing * 0.68;
+      const blockSize = Math.max(3, bw * 0.85);
+      const gap       = bw * 0.15;
+      for (const { x, h } of heights) {
+        const nBlocks = Math.max(1, Math.round(h / (blockSize + gap)));
+        for (let j = 0; j < nBlocks; j++) {
+          const alpha = (1 - j / nBlocks) * (0.6 + audioFrame.overall * 0.4);
+          ctx.fillStyle = rgba(alpha);
+          ctx.shadowBlur  = j === 0 ? glowVal * 1.5 : glowVal * 0.4;
+          ctx.shadowColor = rgba(0.8);
+          const yOff = j * (blockSize + gap) + blockSize / 2;
+          // top stack
+          ctx.fillRect(x - bw/2, centerY - yOff - blockSize/2, bw, blockSize);
+          // bottom mirror
+          ctx.fillRect(x - bw/2, centerY + yOff - blockSize/2, bw, blockSize);
+        }
+      }
     }
 
     ctx.shadowBlur = 0;
 
-    // ── Bloom / softness pass ────────────────────────────────────────────────
-    if (s.softness > 0 || s.bloom > 0) {
+    // ── Bloom / softness pass (linear styles only) ───────────────────────────
+    if (!isRadial && (s.softness > 0 || s.bloom > 0)) {
       ctx.globalCompositeOperation = 'screen';
       const blurAmt = Math.round(s.softness * 1.5 + (s.bloom / 100) * 8 + audioFrame.bass * 6);
       if (blurAmt > 0) ctx.filter = `blur(${blurAmt}px)`;
-      ctx.strokeStyle = `rgba(${color.r},${color.g},${color.b},${0.10 + audioFrame.overall * 0.14})`;
-      ctx.lineWidth = spacing * 0.7;
-      ctx.shadowBlur = s.glow + s.softness * 2 + audioFrame.bass * 12;
-      ctx.shadowColor = `rgba(${color.r},${color.g},${color.b},0.9)`;
-
-      // Batched path for all vertical bar glows
+      ctx.strokeStyle = rgba(0.10 + audioFrame.overall * 0.14);
+      ctx.lineWidth   = spacing * 0.7;
+      ctx.shadowBlur  = s.glow + s.softness * 2 + audioFrame.bass * 12;
+      ctx.shadowColor = rgba(0.9);
       ctx.beginPath();
-      for (const item of heights) {
-        ctx.moveTo(item.x, centerY - item.h);
-        ctx.lineTo(item.x, centerY + item.h);
+      for (const { x, h } of heights) {
+        ctx.moveTo(x, centerY - h);
+        ctx.lineTo(x, centerY + h);
       }
       ctx.stroke();
-
       ctx.filter = 'none';
       ctx.shadowBlur = 0;
       ctx.globalCompositeOperation = 'source-over';
@@ -1033,42 +1197,43 @@
 
     // ── Dust / particles ─────────────────────────────────────────────────────
     ensureParticles(s.dustAmount);
-    ctx.shadowBlur = s.glow * 0.8;
-    ctx.shadowColor = `rgba(${color.r},${color.g},${color.b},0.85)`;
-
+    ctx.shadowBlur  = s.glow * 0.8;
+    ctx.shadowColor = rgba(0.85);
     for (let i = 0; i < particles.length; i++) {
-      const p = particles[i];
-      const base = heights[i % heights.length];
+      const p      = particles[i];
+      const base   = heights[i % heights.length];
       const delay  = s.dustDelay / 100;
       const localT = t * (0.015 + s.dustSpeed / 5000 + audioFrame.treble * 0.02) - p.age * delay;
-
       const vSwing = Math.sin(localT + p.seed) * base.h * (0.16 + audioFrame.mid * 0.18);
       const driftX = Math.cos(localT * 0.7 + p.seed) * (s.dustSpread * 0.35) + p.drift * 12;
       const driftY = Math.sin(localT * 1.2 + p.seed * 1.7) * (s.dustSpread * 0.18);
-
-      const px = base.x + driftX;
-      const py = centerY + vSwing + driftY;
-      const a  = (s.dustAlpha/100) * (0.30 + 0.70 * (0.5 + 0.5 * Math.sin(localT + p.seed))) * (0.75 + audioFrame.treble * 0.65);
-      const sz = s.dustSize * (0.55 + 0.8 * (0.5 + 0.5 * Math.sin(localT * 0.8 + p.seed))) * (0.8 + audioFrame.treble * 0.28);
-      const rot = Math.sin(localT + p.seed) * 0.8;
-
-      drawWavelet(px, py, sz, a, color, rot);
+      const a      = (s.dustAlpha/100) * (0.30 + 0.70*(0.5+0.5*Math.sin(localT+p.seed))) * (0.75+audioFrame.treble*0.65);
+      const sz     = s.dustSize * (0.55+0.8*(0.5+0.5*Math.sin(localT*0.8+p.seed))) * (0.8+audioFrame.treble*0.28);
+      drawWavelet(base.x + driftX, centerY + vSwing + driftY, sz, a, color, Math.sin(localT+p.seed)*0.8);
     }
-
     ctx.shadowBlur = 0;
 
-    // ── Edge mask ────────────────────────────────────────────────────────────
-    ctx.globalCompositeOperation = 'destination-in';
-    ctx.fillStyle = fade;
-    ctx.fillRect(-waveWidth/2, centerY - waveHeight - 120, waveWidth, waveHeight * 2 + 240);
+    // ── Edge fade mask (linear styles) ───────────────────────────────────────
+    if (!isRadial) {
+      const fade = ctx.createLinearGradient(-waveWidth/2, 0, waveWidth/2, 0);
+      const edge = Math.min(0.45, s.fadeEdge / 100);
+      fade.addColorStop(0,       'rgba(255,255,255,0)');
+      fade.addColorStop(edge,    'rgba(255,255,255,1)');
+      fade.addColorStop(1-edge,  'rgba(255,255,255,1)');
+      fade.addColorStop(1,       'rgba(255,255,255,0)');
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.fillStyle = fade;
+      ctx.fillRect(-waveWidth/2, centerY - waveHeight - 120, waveWidth, waveHeight * 2 + 240);
+      ctx.restore(); // restore clip
+    }
 
-    ctx.restore();
-    ctx.restore();
+    ctx.restore(); // restore translate
   }
 
   // ─── Settings ─────────────────────────────────────────────────────────────────
   function getSettings() {
     return {
+      barStyle:        el.barStyle.value,
       bars:            parseInt(el.bars.value, 10),
       glow:            parseInt(el.glow.value, 10),
       motion:          parseInt(el.motion.value, 10),
