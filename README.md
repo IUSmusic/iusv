@@ -240,7 +240,7 @@ KNOWN LIMITATIONS
   Remote URLs may require appropriate CORS headers.
 
 
-License
+## License
 MIT LICENSE
 
 Copyright 2026 Pezhman Farhangi IUS Music
